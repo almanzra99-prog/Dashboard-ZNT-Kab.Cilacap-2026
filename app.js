@@ -535,6 +535,7 @@ function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
             <div class="znt-popup-row"><span>Titik di Lapangan:</span> <strong>${pointsInZone} Titik</strong></div>
             <div class="znt-popup-row"><span>Dihitung untuk Target:</span> <strong style="color:${effectiveInThisZone >= targetInfo.target ? '#10b981' : '#eab308'}; font-weight:800;">${effectiveInThisZone} / ${targetInfo.target} Titik</strong></div>
             <div class="znt-popup-row"><span>Penggunaan Tanah:</span> <strong>${p.PENGGUNAAN || 'Umum'}</strong></div>
+            <div class="znt-popup-row"><span>Zoning Titik Sampel:</span> <strong style="color:#38bdf8;">${p.Zoning_Sampel && p.Zoning_Sampel !== '-' ? p.Zoning_Sampel : (pointsInZone > 0 ? 'Tercatat' : '-')}</strong></div>
 
             <!-- HASIL QUALITY CONTROL (SIPENTA) -->
             <div style="margin-top:8px; padding-top:6px; border-top:1px dashed rgba(255,255,255,0.18);">
@@ -623,6 +624,8 @@ function renderSamplePointsOnMap(pointsToRender) {
         </div>
         <div style="margin-top:6px;">
           <div class="znt-popup-row"><span>Zona ZNT Terkait:</span> <strong style="color:#38bdf8;">Zona ${p.NOZN || '-'} (${p.HISTZONE || '-'})</strong></div>
+          <div class="znt-popup-row"><span>Zoning / Peruntukan:</span> <strong style="color:#38bdf8;">${p.Zoning || p.ZoningKode || '-'}</strong></div>
+          <div class="znt-popup-row"><span>Objek Fisik:</span> <strong>${p.GunaObjek || '-'}</strong></div>
           <div class="znt-popup-row"><span>Surveyor:</span> <strong>${getCanonicalSurveyorName(p.Surveyor)}</strong></div>
           <div class="znt-popup-row"><span>Tgl Survei:</span> <strong>${p.Tgl || '-'}</strong></div>
           <div class="znt-popup-row"><span>Alamat:</span> <strong>${p.Alamat || '-'}</strong></div>
@@ -862,6 +865,7 @@ function renderRecentSamples(sampleList) {
         <span><i class="fa-regular fa-user"></i> ${getCanonicalSurveyorName(p.Surveyor)}</span>
         <span>&bull;</span>
         <span><i class="fa-regular fa-calendar"></i> ${p.Tgl || '-'}</span>
+        ${p.Zoning ? `<span>&bull;</span> <span style="color:#38bdf8; font-weight:600;">${p.Zoning}</span>` : ''}
       </div>
       <div style="font-size:0.7rem; color:var(--text-muted);">${p.Alamat || ''}, ${p.Kelurahan || ''}</div>
       ${nilaiFormatted ? `<div class="sample-log-price">${nilaiFormatted}</div>` : ''}
