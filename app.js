@@ -81,7 +81,7 @@ function normalizeToGeoJson(raw) {
 // =============================================================================
 let allZoneFeatures = [];         // 732 Poligon Zona
 let allSamplePoints = [];         // 1.652 Titik Sampel
-const zonePointsCountMap = {};    // { "337": 3, "335": 3, ... }
+let zonePointsCountMap = {};      // { "337": 3, "335": 3, ... }
 let polygonLayerGroup = null;
 let pointsLayerGroup = null;
 let aplLayerGroup = null;
@@ -315,9 +315,12 @@ async function loadSamplePoints() {
             zonePointsCountMap[nozn] = (zonePointsCountMap[nozn] || 0) + 1;
           }
         });
+        console.log(`📍 Pemetaan titik ke zona selesai: ${Object.keys(zonePointsCountMap).length} zona terisi sampel.`);
         return; // Berhasil muat dari candidate pertama
       }
-    } catch (err) { }
+    } catch (err) {
+      console.warn(`Gagal memuat titik dari ${pointsPath}:`, err);
+    }
   }
   console.warn("⚠️ Gagal memuat titik_sampel_with_nozn.geojson dari semua lokasi candidate.");
 }
