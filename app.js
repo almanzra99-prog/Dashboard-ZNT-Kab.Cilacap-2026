@@ -80,8 +80,9 @@ function normalizeToGeoJson(raw) {
 // 2. STATE DATA GLOBAL & NORMALISASI NAMA SURVEYOR
 // =============================================================================
 let allZoneFeatures = [];         // 732 Poligon Zona
-let allSamplePoints = [];         // 1.652 Titik Sampel
+let allSamplePoints = [];         // Titik Sampel
 let zonePointsCountMap = {};      // { "337": 3, "335": 3, ... }
+let zonePointsDataMap = {};       // { "337": [ 350000, 400000, ... ] }
 let polygonLayerGroup = null;
 let pointsLayerGroup = null;
 let aplLayerGroup = null;
@@ -308,11 +309,15 @@ async function loadSamplePoints() {
         console.log(`✅ Berhasil memuat ${allSamplePoints.length} titik sampel dari: ${pointsPath}`);
 
         zonePointsCountMap = {};
+        zonePointsDataMap = {};
         allSamplePoints.forEach(pt => {
           const p = pt.properties || pt.attributes || {};
           const nozn = `${p.NOZN}`.trim();
           if (nozn && nozn !== '') {
             zonePointsCountMap[nozn] = (zonePointsCountMap[nozn] || 0) + 1;
+            if (!zonePointsDataMap[nozn]) zonePointsDataMap[nozn] = [];
+            const val = Number(p.NilaiPerM2) || 0;
+            if (val > 0) zonePointsDataMap[nozn].push(val);
           }
         });
         console.log(`📍 Pemetaan titik ke zona selesai: ${Object.keys(zonePointsCountMap).length} zona terisi sampel.`);
@@ -377,8 +382,49 @@ function addGeoJsonToMap(geojsonData, filename = '') {
 }
 
 // =============================================================================
-// 7. RENDER POLIGON ZONA PADA PETA
+// 7. HELPER QC CERDAS & RENDER POLIGON ZONA PADA PETA
 // =============================================================================
+function getZoneQcInfo(props, nozn) {
+  let statusQc = (props.Status_QC || props.status_qc || '').trim();
+  let rataNilai = (props.Rata_Nilai !== undefined && props.Rata_Nilai !== null) ? Number(props.Rata_Nilai) : 0;
+  let rsd = (props.RSD_Persen !== undefined && props.RSD_Persen !== null) ? Number(props.RSD_Persen) : null;
+  let jmlTitik = (props.Jml_Titik_QC !== undefined && props.Jml_Titik_QC !== null) ? Number(props.Jml_Titik_QC) : 0;
+
+  const pointsInZone = zonePointsCountMap[nozn] || 0;
+  const pointValues = zonePointsDataMap[nozn] || [];
+
+  // SMART QC FALLBACK:
+  // Jika di file poligon statusnya masih 'Belum Disurvey' atau rataNilai 0,
+  // tetapi di lapangan surveyor sudah mengambil titik (misal Zona 145 ada 4 titik):
+  if ((!statusQc || statusQc.includes('Belum Disurvey') || rataNilai === 0) && pointsInZone > 0) {
+    jmlTitik = pointsInZone;
+    if (pointValues.length > 0) {
+      const sum = pointValues.reduce((a, b) => a + b, 0);
+      rataNilai = sum / pointValues.length;
+
+      if (pointValues.length > 1) {
+        const sumSq = pointValues.reduce((acc, v) => acc + Math.pow(v - rataNilai, 2), 0);
+        const sd = Math.sqrt(sumSq / (pointValues.length - 1));
+        rsd = rataNilai > 0 ? (sd / rataNilai) * 100 : 0;
+      } else {
+        rsd = 0;
+      }
+    }
+
+    if (pointsInZone >= 3) {
+      if (rsd > 0 && rsd <= 30.0) {
+        statusQc = 'Lengkap & Valid';
+      } else {
+        statusQc = 'Perlu Revisi (RSD)';
+      }
+    } else {
+      statusQc = 'Kurang Lengkap';
+    }
+  }
+
+  return { statusQc, rataNilai, rsd, jmlTitik };
+}
+
 function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
   polygonLayerGroup.clearLayers();
 
@@ -423,7 +469,8 @@ function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
         };
       } else if (colorMode === 'qc') {
         // MODE 3: STATUS QUALITY CONTROL (QC SIPENTA)
-        const rawQc = (props.Status_QC || '').trim();
+        const qcInfo = getZoneQcInfo(props, nozn);
+        const rawQc = qcInfo.statusQc;
         let fillColor = '#475569'; // Abu-abu gelap (Belum Disurvey / default)
         let fillOpacity = 0.35;
         let weight = 1.1;
@@ -491,7 +538,8 @@ function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
       }
 
       // --- FORMAT ATRIBUT QC (QUALITY CONTROL) SIPENTA ---
-      const rawQc = (p.Status_QC || '').trim();
+      const qcInfo = getZoneQcInfo(p, nozn);
+      const rawQc = qcInfo.statusQc;
       let qcBadge = `<span class="znt-badge" style="background:#64748b; color:#fff;">Belum Terdata QC</span>`;
       if (rawQc) {
         if (rawQc.includes('Lengkap & Valid')) {
@@ -507,12 +555,12 @@ function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
         }
       }
 
-      const rataNilaiNum = (p.Rata_Nilai !== undefined && p.Rata_Nilai !== null) ? Number(p.Rata_Nilai) : 0;
+      const rataNilaiNum = qcInfo.rataNilai || 0;
       const rataNilaiFormatted = (rataNilaiNum > 0)
         ? `Rp ${Math.round(rataNilaiNum).toLocaleString('id-ID')} / m²`
         : (rataNilaiNum < 0 ? `Rp ${Math.round(rataNilaiNum).toLocaleString('id-ID')} / m² (Perlu Cek)` : '-');
 
-      const rsdNum = (p.RSD_Persen !== undefined && p.RSD_Persen !== null) ? Number(p.RSD_Persen) : null;
+      const rsdNum = qcInfo.rsd;
       let rsdFormatted = '-';
       if (rsdNum !== null && rsdNum > 0) {
         const rsdColor = rsdNum > 30 ? '#f59e0b' : '#10b981';
@@ -563,7 +611,8 @@ function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
           const dash = (pointsInZone >= targetInfo.target) ? null : (pointsInZone > 0 ? '4, 3' : '3, 3');
           this.setStyle({ weight: w, color: '#090d16', fillOpacity: fOp, dashArray: dash });
         } else if (colorMode === 'qc') {
-          const rawQc = (p.Status_QC || '').trim();
+          const qcInfo = getZoneQcInfo(p, nozn);
+          const rawQc = qcInfo.statusQc;
           let fOp = 0.35;
           let w = 1.1;
           if (rawQc.includes('Lengkap & Valid')) { fOp = 0.65; w = 1.4; }
@@ -739,7 +788,9 @@ function refreshDashboard(shouldFitBounds = false) {
 
   activeZones.forEach(f => {
     const props = f.properties || f.attributes || {};
-    const sqc = (props.Status_QC || props.status_qc || '').trim();
+    const nozn = `${props.NOZN}`.trim();
+    const qcInfo = getZoneQcInfo(props, nozn);
+    const sqc = (qcInfo.statusQc || '').trim();
     if (sqc.includes('Lengkap & Valid')) {
       qcValid++;
     } else if (sqc.includes('Perlu Revisi')) {
