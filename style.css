@@ -111,6 +111,78 @@ body {
   margin-top: 1px;
 }
 
+/* BADGE TANGGAL UPDATE DI HEADER */
+.header-update-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  width: fit-content;
+}
+
+.header-update-badge .update-label {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.header-update-badge .update-val {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.header-update-badge .update-sep {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.header-update-badge .survey-val {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+/* Pulsing Green Live Dot */
+.live-dot-pulse {
+  width: 7px;
+  height: 7px;
+  background-color: #10b981;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: liveDotPulse 1.8s infinite cubic-bezier(0.66, 0, 0, 1);
+  flex-shrink: 0;
+}
+
+.live-dot-pulse.mini {
+  width: 6px;
+  height: 6px;
+}
+
+@keyframes liveDotPulse {
+  to {
+    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+  }
+}
+
+.m-update-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 1px 7px;
+  border-radius: 12px;
+  font-size: 0.62rem;
+  color: #34d399;
+  font-weight: 600;
+  width: fit-content;
+}
+
 .btn-mobile-view-map {
   display: none;
 }
@@ -1293,4 +1365,521 @@ body {
     right: 16px;
     bottom: 16px;
   }
+
+  .map-overlay-toolbar {
+    flex-wrap: wrap;
+    max-width: calc(100% - 32px);
+  }
+
+  .map-quick-search-box {
+    width: 100%;
+    order: 10;
+  }
+
+  #map-quick-search-input:focus {
+    width: 100%;
+  }
+
+  .map-search-dropdown {
+    width: 100%;
+  }
+}
+
+/* =============================================================================
+   PENCARIAN TITIK SAMPEL & KOORDINAT SPASIAL
+   ============================================================================= */
+
+/* 1. Panel Pencarian di Sidebar */
+.search-panel-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-tabs {
+  display: flex;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 4px;
+}
+
+.search-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: var(--transition);
+}
+
+.search-tab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.search-tab-btn.active {
+  background: var(--accent-sky);
+  color: #090d16;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.25);
+}
+
+.search-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+}
+
+.search-input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.search-input-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-wrapper .input-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  background: #0b1120;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 9px 34px 9px 34px;
+  color: #fff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.82rem;
+  outline: none;
+  transition: var(--transition);
+}
+
+.search-input:focus {
+  border-color: var(--accent-sky);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+}
+
+.search-input::placeholder {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.btn-input-clear {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-input-clear:hover {
+  color: #fff;
+}
+
+.btn-search-action {
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.btn-search-action:hover {
+  background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.35);
+  transform: translateY(-1px);
+}
+
+.search-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.4;
+  background: rgba(15, 23, 42, 0.4);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--accent-sky);
+}
+
+.search-hint i {
+  color: var(--accent-sky);
+  margin-top: 2px;
+}
+
+/* Autocomplete List Dropdown */
+.search-autocomplete-list {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  right: 0;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 60;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+
+.autocomplete-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  transition: var(--transition);
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.ac-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.ac-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ac-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ac-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* Result Box */
+.search-result-box {
+  background: rgba(11, 17, 32, 0.9);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeInDown 0.25s ease-out;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 6px;
+}
+
+.btn-close-result {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.btn-close-result:hover {
+  color: #fff;
+}
+
+.result-body {
+  font-size: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.result-row span {
+  color: var(--text-muted);
+}
+
+.result-row strong {
+  color: #fff;
+  text-align: right;
+}
+
+.result-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.btn-result-focus {
+  flex: 1;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid var(--accent-sky);
+  color: var(--accent-sky);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: var(--transition);
+}
+
+.btn-result-focus:hover {
+  background: var(--accent-sky);
+  color: #090d16;
+}
+
+/* 2. Floating Quick Search pada Toolbar Peta */
+.map-quick-search-box {
+  position: relative;
+  width: 280px;
+  z-index: 45;
+}
+
+.map-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.map-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--accent-sky);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+#map-quick-search-input {
+  width: 100%;
+  height: 40px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 32px 0 34px;
+  color: #fff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  outline: none;
+  transition: var(--transition);
+}
+
+#map-quick-search-input:focus {
+  border-color: var(--accent-sky);
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2), 0 6px 16px rgba(0, 0, 0, 0.4);
+  width: 320px;
+}
+
+#map-quick-search-input::placeholder {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+.btn-map-search-clear {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-map-search-clear:hover {
+  color: #fff;
+}
+
+.map-search-dropdown {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  width: 340px;
+  background: rgba(15, 23, 42, 0.98);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+  z-index: 60;
+  animation: fadeInDown 0.2s ease-out;
+}
+
+/* 3. Marker Animasi Highlight & Target Pin */
+.znt-pulse-marker-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.znt-pulse-ring {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.8);
+  animation: zntPulseAnim 1.5s infinite ease-out;
+}
+
+.znt-pulse-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #38bdf8;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px #38bdf8;
+}
+
+.znt-pulse-label {
+  position: absolute;
+  top: -26px;
+  background: #0284c7;
+  color: #fff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+@keyframes zntPulseAnim {
+  0% { transform: scale(0.3); opacity: 1; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Pin Koordinat Hasil Pencarian */
+.znt-coord-pin-container {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.znt-coord-pin-icon {
+  width: 32px;
+  height: 32px;
+  background: #ef4444;
+  border: 2px solid #ffffff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.6);
+  position: absolute;
+  top: 0;
+}
+
+.znt-coord-pin-icon i {
+  transform: rotate(45deg);
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.znt-coord-pin-pulse {
+  position: absolute;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  background: rgba(239, 68, 68, 0.4);
+  border-radius: 50%;
+  animation: zntPinPulse 1.8s infinite ease-out;
+}
+
+@keyframes zntPinPulse {
+  0% { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(3); opacity: 0; }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
