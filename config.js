@@ -71,5 +71,10 @@ const CONFIG = {
       color: "#8b5cf6",     // Violet Purple
       accent: "#a78bfa"
     }
-  ]
+  ],
+
+  // 6. Metadata Pembaruan Data Dashboard
+  lastUpdateDate: "2026-11-16",
+  lastUpdateTime: "09:43 WIB",
+  lastUpdateNote: "Pembaruan fitur pencarian titik & koordinat spasial"
 };

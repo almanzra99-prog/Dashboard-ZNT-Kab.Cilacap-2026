@@ -23,7 +23,7 @@
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="style.css?v=2026.5">
+  <link rel="stylesheet" href="style.css?v=2026.8">
 </head>
 
 <body>
@@ -36,6 +36,10 @@
         <div class="m-brand-info">
           <span class="m-brand-title" id="m-header-title">ZNT CILACAP 2026</span>
           <span class="m-brand-sub" id="m-header-sub">Monitoring Titik Sampel</span>
+          <div class="m-update-pill" id="m-header-update-badge" title="Waktu pembaruan data dashboard">
+            <span class="live-dot-pulse mini"></span>
+            <span id="m-last-update-val">Update: 16 Nov 2026, 09:43 WIB</span>
+          </div>
         </div>
       </div>
       <div class="mobile-view-switcher">
@@ -64,6 +68,11 @@
           <div class="brand-text">
             <h1 id="header-title">DASHBOARD ZNT CILACAP 2026</h1>
             <p class="brand-sub" id="header-sub">Monitoring Pencapaian Titik Sampel Surveyor</p>
+            <div class="header-update-badge" id="header-update-badge" title="Waktu pembaruan data dashboard">
+              <span class="live-dot-pulse"></span>
+              <span class="update-label">Update:</span>
+              <strong class="update-val" id="header-last-update-val">16 Nov 2026, 09:43 WIB</strong>
+            </div>
           </div>
         </div>
         <button class="btn-mobile-view-map" id="btn-mobile-view-map" title="Buka Peta">
@@ -96,6 +105,81 @@
 
           <div class="sort-status-indicator" id="sort-status-text">
             <i class="fa-solid fa-map"></i> Memuat data zona & titik sampel...
+          </div>
+        </section>
+
+        <!-- 🔍 PENCARIAN TITIK & KOORDINAT SPASIAL -->
+        <section class="dash-card search-panel-card" id="search-panel-card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">🔍</span>
+              <h2>PENCARIAN TITIK &amp; KOORDINAT</h2>
+            </div>
+            <span class="card-badge" id="search-status-badge" style="display:none; font-size:0.68rem; background:rgba(56,189,248,0.15); color:#38bdf8;">Siap</span>
+          </div>
+
+          <!-- Switcher Tab: No. Titik vs Koordinat -->
+          <div class="search-tabs">
+            <button class="search-tab-btn active" id="tab-search-point" type="button">
+              <i class="fa-solid fa-location-dot"></i> No. Titik Sampel
+            </button>
+            <button class="search-tab-btn" id="tab-search-coord" type="button">
+              <i class="fa-solid fa-crosshairs"></i> Koordinat Spasial
+            </button>
+          </div>
+
+          <!-- Tab 1: Form No. Titik Sampel -->
+          <div class="search-tab-content" id="search-point-content">
+            <div class="search-input-group">
+              <div class="search-input-wrapper">
+                <i class="fa-solid fa-magnifying-glass input-icon"></i>
+                <input type="text" id="input-search-point" class="search-input" placeholder="Ketik No. Titik (cth: 1245 atau #1245)..." autocomplete="off" />
+                <button type="button" class="btn-input-clear" id="btn-clear-point" title="Hapus input" style="display:none;">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <button type="button" class="btn-search-action" id="btn-do-search-point" title="Cari Titik Sampel">
+                <i class="fa-solid fa-arrow-right"></i> Cari
+              </button>
+            </div>
+
+            <!-- Autocomplete list popup -->
+            <div class="search-autocomplete-list" id="point-autocomplete-list" style="display:none;"></div>
+
+            <div class="search-hint">
+              <i class="fa-solid fa-circle-info"></i>
+              <span>Ketik nomor titik (misal <strong>1245</strong>) atau ID SIPENTA. Peta akan otomatis terbang ke lokasi &amp; membuka detail.</span>
+            </div>
+          </div>
+
+          <!-- Tab 2: Form Koordinat Spasial -->
+          <div class="search-tab-content" id="search-coord-content" style="display:none;">
+            <div class="search-input-group">
+              <div class="search-input-wrapper">
+                <i class="fa-solid fa-crosshairs input-icon"></i>
+                <input type="text" id="input-search-coord" class="search-input" placeholder="Lat, Long / TM-3 (cth: -7.646, 108.776)..." autocomplete="off" />
+                <button type="button" class="btn-input-clear" id="btn-clear-coord" title="Hapus input" style="display:none;">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <button type="button" class="btn-search-action" id="btn-do-search-coord" title="Plot Koordinat">
+                <i class="fa-solid fa-location-crosshairs"></i> Plot
+              </button>
+            </div>
+
+            <div class="search-hint">
+              <i class="fa-solid fa-circle-info"></i>
+              <span>Mendukung: <strong>WGS84</strong> (Lat, Lon / Lon, Lat), <strong>TM-3 BPN</strong> (X, Y), &amp; <strong>UTM 49S</strong>.</span>
+            </div>
+          </div>
+
+          <!-- Result Container -->
+          <div class="search-result-box" id="search-result-box" style="display:none;">
+            <div class="result-header">
+              <span id="result-title"><i class="fa-solid fa-circle-check" style="color:#10b981;"></i> Hasil Ditemukan</span>
+              <button type="button" class="btn-close-result" id="btn-close-result" title="Tutup hasil">&times;</button>
+            </div>
+            <div class="result-body" id="result-body"></div>
           </div>
         </section>
 
@@ -284,7 +368,7 @@
               <span class="status-indicator online"></span>
               <span>Data Spasial ZNT & Titik Terhubung</span>
             </div>
-            <div class="sync-time" id="last-update-time">Sinkronisasi Lokal</div>
+            <div class="sync-time" id="last-update-time">Terakhir diperbarui: 16 Nov 2026, 09:43 WIB</div>
           </div>
           <div class="sync-actions">
             <button class="btn-action btn-sync" id="btn-sync-sipenta" title="Cek &amp; Sinkronkan File Survei Terbaru dari Folder Downloads SIPENTA">
@@ -355,6 +439,18 @@
           <button class="btn-map-icon" id="btn-reset-zoom" title="Reset Tampilan Peta">
             <i class="fa-solid fa-arrows-to-dot"></i>
           </button>
+        </div>
+
+        <!-- QUICK SEARCH FLOATING PADA PETA -->
+        <div class="map-quick-search-box" id="map-quick-search-box">
+          <div class="map-search-input-wrap">
+            <i class="fa-solid fa-magnifying-glass map-search-icon"></i>
+            <input type="text" id="map-quick-search-input" placeholder="Cari No. Titik (#1245) / Koordinat..." autocomplete="off" />
+            <button type="button" class="btn-map-search-clear" id="btn-map-search-clear" title="Hapus" style="display:none;">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <div class="map-search-dropdown" id="map-search-dropdown" style="display:none;"></div>
         </div>
       </div>
 
@@ -483,8 +579,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 
   <!-- Konfigurasi & Script Utama -->
-  <script src="config.js?v=2026.5"></script>
-  <script src="app.js?v=2026.5"></script>
+  <script src="config.js?v=2026.8"></script>
+  <script src="app.js?v=2026.8"></script>
 </body>
 
 </html>

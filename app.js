@@ -19,6 +19,10 @@ if (typeof proj4 !== 'undefined') {
     "EPSG:23835",
     "+proj=tmerc +lat_0=0 +lon_0=109.5 +k=0.9999 +x_0=200000 +y_0=1500000 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
   );
+  proj4.defs(
+    "EPSG:32749",
+    "+proj=utm +zone=49 +south +datum=WGS84 +units=m +no_defs"
+  );
 }
 
 function reprojectCoords(coords) {
@@ -86,6 +90,9 @@ let zonePointsDataMap = {};       // { "337": [ 350000, 400000, ... ] }
 let polygonLayerGroup = null;
 let pointsLayerGroup = null;
 let aplLayerGroup = null;
+let sampleMarkersMap = {};        // { "1245": marker, "01/2026/0075/1/1245": marker }
+let searchPulseMarker = null;     // Marker efek pulsing titik sampel
+let searchCoordMarker = null;     // Marker pin lokasi koordinat dicari
 let activeFilterSurveyor = 'default';
 let colorMode = 'surveyor';       // 'surveyor' (Pewarnaan per Surveyor) atau 'status' (Hijau/Kuning/Merah)
 
@@ -642,6 +649,7 @@ function renderZonesOnMap(zonesToRender, shouldFitBounds = true) {
 // =============================================================================
 function renderSamplePointsOnMap(pointsToRender) {
   pointsLayerGroup.clearLayers();
+  sampleMarkersMap = {};
 
   pointsToRender.forEach(pt => {
     const coords = (pt.geometry && pt.geometry.coordinates) ? pt.geometry.coordinates : null;
@@ -665,6 +673,8 @@ function renderSamplePointsOnMap(pointsToRender) {
       fillOpacity: 0.85
     });
 
+    marker.feature = pt;
+
     marker.bindPopup(`
       <div class="znt-popup">
         <div class="znt-popup-header" style="border-left: 4px solid ${survColor};">
@@ -685,6 +695,14 @@ function renderSamplePointsOnMap(pointsToRender) {
         </div>
       </div>
     `);
+
+    // Catat referensi marker untuk pencarian instan
+    if (p.No !== undefined && p.No !== null && `${p.No}`.trim() !== '') {
+      sampleMarkersMap[`${p.No}`.trim()] = marker;
+    }
+    if (p.Id && `${p.Id}`.trim() !== '') {
+      sampleMarkersMap[`${p.Id}`.trim().toLowerCase()] = marker;
+    }
 
     pointsLayerGroup.addLayer(marker);
   });
@@ -875,6 +893,43 @@ function refreshDashboard(shouldFitBounds = false) {
 
   // 7. Update Legenda Peta
   updateFloatingLegend(selectedSurveyor, totalCappedAchieved, totalTarget, completionPct);
+
+  // 8. Update Badge Info Tanggal Pembaruan
+  updateDashboardDateBadge();
+}
+
+function formatIndonesianDateShort(dateStr) {
+  if (!dateStr) return '';
+  const m = `${dateStr}`.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const day = parseInt(m[3], 10);
+    const month = months[parseInt(m[2], 10) - 1];
+    const year = m[1];
+    return `${day} ${month} ${year}`;
+  }
+  return dateStr;
+}
+
+function updateDashboardDateBadge() {
+  const rawDate = (CONFIG && CONFIG.lastUpdateDate) ? CONFIG.lastUpdateDate : new Date().toISOString().slice(0, 10);
+  const rawTime = (CONFIG && CONFIG.lastUpdateTime) ? CONFIG.lastUpdateTime : "09:43 WIB";
+  const formattedDate = formatIndonesianDateShort(rawDate);
+  const displayText = `${formattedDate}, ${rawTime}`;
+
+  // 1. Header Desktop
+  const headerVal = document.getElementById('header-last-update-val');
+  if (headerVal) headerVal.textContent = displayText;
+
+  // 2. Mobile Header
+  const mVal = document.getElementById('m-last-update-val');
+  if (mVal) mVal.textContent = `Update: ${displayText}`;
+
+  // 3. Sync Card di bawah sidebar
+  const syncTime = document.getElementById('last-update-time');
+  if (syncTime) {
+    syncTime.innerHTML = `Terakhir diperbarui: <strong>${displayText}</strong>`;
+  }
 }
 
 function updateElementText(id, text) {
@@ -1042,6 +1097,816 @@ function updateFloatingLegend(selectedSurveyor, achieved, target, pct) {
     });
 
     survContainer.appendChild(row);
+  });
+}
+
+// =============================================================================
+// 9.5. LOGIKA PENCARIAN TITIK SAMPEL & KOORDINAT SPASIAL
+// =============================================================================
+
+/**
+ * Efek visual highlight marker berdenyut (pulse) di peta
+ */
+function highlightPointOnMap(lat, lon, label) {
+  if (searchPulseMarker) {
+    try { map.removeLayer(searchPulseMarker); } catch(e){}
+    searchPulseMarker = null;
+  }
+
+  const pulseIcon = L.divIcon({
+    className: 'znt-pulse-marker-container',
+    html: `
+      <div class="znt-pulse-ring"></div>
+      <div class="znt-pulse-dot"></div>
+      ${label ? `<div class="znt-pulse-label">${label}</div>` : ''}
+    `,
+    iconSize: [48, 48],
+    iconAnchor: [24, 24]
+  });
+
+  searchPulseMarker = L.marker([lat, lon], {
+    icon: pulseIcon,
+    zIndexOffset: 1200,
+    interactive: false
+  }).addTo(map);
+
+  // Otomatis bersihkan setelah 15 detik
+  setTimeout(() => {
+    if (searchPulseMarker && map.hasLayer(searchPulseMarker)) {
+      try { map.removeLayer(searchPulseMarker); } catch(e){}
+      searchPulseMarker = null;
+    }
+  }, 15000);
+}
+
+/**
+ * Konversi koordinat WGS84 ke TM-3 BPN dan UTM 49S
+ */
+function convertWgsToTm3AndUtm(lon, lat) {
+  let tm3 = null;
+  let utm = null;
+  if (typeof proj4 !== 'undefined') {
+    try {
+      const pTm3 = proj4("WGS84", "EPSG:23835", [lon, lat]);
+      if (pTm3 && !isNaN(pTm3[0]) && !isNaN(pTm3[1])) {
+        tm3 = { x: Math.round(pTm3[0] * 10) / 10, y: Math.round(pTm3[1] * 10) / 10 };
+      }
+    } catch (e) { }
+    try {
+      const pUtm = proj4("WGS84", "EPSG:32749", [lon, lat]);
+      if (pUtm && !isNaN(pUtm[0]) && !isNaN(pUtm[1])) {
+        utm = { x: Math.round(pUtm[0] * 10) / 10, y: Math.round(pUtm[1] * 10) / 10 };
+      }
+    } catch (e) { }
+  }
+  return { tm3, utm };
+}
+
+/**
+ * Cek spasial ray-casting apakah titik [lon, lat] berada di dalam poligon
+ */
+function pointInRing(pt, ring) {
+  const x = pt[0], y = pt[1];
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function findZoneContainingPoint(lon, lat) {
+  if (!allZoneFeatures || allZoneFeatures.length === 0) return null;
+  for (let i = 0; i < allZoneFeatures.length; i++) {
+    const f = allZoneFeatures[i];
+    if (!f.geometry || !f.geometry.coordinates) continue;
+    const geomType = f.geometry.type;
+    const coords = f.geometry.coordinates;
+
+    if (geomType === 'Polygon') {
+      if (coords.length > 0 && pointInRing([lon, lat], coords[0])) {
+        return f;
+      }
+    } else if (geomType === 'MultiPolygon') {
+      for (let p = 0; p < coords.length; p++) {
+        if (coords[p].length > 0 && pointInRing([lon, lat], coords[p][0])) {
+          return f;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Hitung jarak Haversine dalam meter antara dua koordinat WGS84
+ */
+function getDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function findNearestSamplePoint(lat, lon) {
+  if (!allSamplePoints || allSamplePoints.length === 0) return null;
+  let nearest = null;
+  let minDist = Infinity;
+
+  for (let i = 0; i < allSamplePoints.length; i++) {
+    const pt = allSamplePoints[i];
+    if (!pt.geometry || !pt.geometry.coordinates) continue;
+    const pLon = pt.geometry.coordinates[0];
+    const pLat = pt.geometry.coordinates[1];
+    const d = getDistanceMeters(lat, lon, pLat, pLon);
+    if (d < minDist) {
+      minDist = d;
+      nearest = { pt, dist: d };
+    }
+  }
+
+  return nearest;
+}
+
+/**
+ * Parser cerdas koordinat: WGS84, TM-3 BPN, UTM 49S, dan DMS
+ */
+function parseCoordinateInput(inputStr) {
+  if (!inputStr || typeof inputStr !== 'string') return null;
+  const clean = inputStr.trim();
+  if (!clean) return null;
+
+  // 1. Cek format DMS (cth: 7°40'40.8" S 109°01'06" E)
+  const dmsMatches = clean.match(/(\d+)[\s°]+(\d+)[\s']+([\d.]+)[\s"']*([NSEWnsew]?)/g);
+  if (dmsMatches && dmsMatches.length >= 2) {
+    function parseDmsPart(str) {
+      const p = str.match(/(\d+)[\s°]+(\d+)[\s']+([\d.]+)[\s"']*([NSEWnsew]?)/);
+      if (!p) return null;
+      let dd = parseFloat(p[1]) + parseFloat(p[2]) / 60 + parseFloat(p[3]) / 3600;
+      const dir = (p[4] || '').toUpperCase();
+      if (dir === 'S' || dir === 'W') dd = -dd;
+      return { val: dd, dir };
+    }
+    const d1 = parseDmsPart(dmsMatches[0]);
+    const d2 = parseDmsPart(dmsMatches[1]);
+    if (d1 && d2) {
+      let lat, lon;
+      if (d1.dir === 'S' || d1.dir === 'N' || (d1.val < 0 && d2.val > 0)) {
+        lat = d1.val; lon = d2.val;
+      } else {
+        lon = d1.val; lat = d2.val;
+      }
+      return { lat, lon, type: 'WGS84 (DMS)', original: clean };
+    }
+  }
+
+  // 2. Ekstrak dua angka numerik
+  const nums = clean.replace(/,/g, ' ').replace(/[;|]/g, ' ').split(/\s+/).map(s => parseFloat(s)).filter(n => !isNaN(n));
+  if (nums.length < 2) return null;
+
+  const n1 = nums[0];
+  const n2 = nums[1];
+
+  // 3. Cek format WGS84 Desimal
+  if ((n1 >= -90 && n1 <= 90) && (n2 >= -180 && n2 <= 180)) {
+    let lat, lon;
+    if (n1 < 0 && n2 > 0) {
+      lat = n1; lon = n2;
+    } else if (n2 < 0 && n1 > 0) {
+      lon = n1; lat = n2;
+    } else if (n1 > 90 && n2 < 0) {
+      lon = n1; lat = n2;
+    } else if (n2 > 90 && n1 < 0) {
+      lat = n1; lon = n2;
+    } else {
+      lat = n1; lon = n2;
+    }
+    return { lat, lon, type: 'WGS84 (Desimal)', original: clean };
+  }
+
+  // 4. Cek format TM-3 BPN Zone 49.1 / 49.2 (EPSG:23835)
+  let xTM3, yTM3, isTM3 = false;
+  if ((n1 >= 50000 && n1 <= 350000) && (n2 >= 400000 && n2 <= 1100000)) {
+    xTM3 = n1; yTM3 = n2; isTM3 = true;
+  } else if ((n2 >= 50000 && n2 <= 350000) && (n1 >= 400000 && n1 <= 1100000)) {
+    xTM3 = n2; yTM3 = n1; isTM3 = true;
+  }
+
+  if (isTM3 && typeof proj4 !== 'undefined') {
+    try {
+      const p = proj4("EPSG:23835", "WGS84", [xTM3, yTM3]);
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        return { lat: p[1], lon: p[0], x: xTM3, y: yTM3, type: 'TM-3 BPN (EPSG:23835)', original: clean };
+      }
+    } catch (e) { }
+  }
+
+  // 5. Cek format UTM Zone 49S (EPSG:32749)
+  let xUTM, yUTM, isUTM = false;
+  if ((n1 >= 150000 && n1 <= 450000) && (n2 >= 8500000 && n2 <= 9500000)) {
+    xUTM = n1; yUTM = n2; isUTM = true;
+  } else if ((n2 >= 150000 && n2 <= 450000) && (n1 >= 8500000 && n1 <= 9500000)) {
+    xUTM = n2; yUTM = n1; isUTM = true;
+  }
+
+  if (isUTM && typeof proj4 !== 'undefined') {
+    try {
+      const p = proj4("EPSG:32749", "WGS84", [xUTM, yUTM]);
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        return { lat: p[1], lon: p[0], x: xUTM, y: yUTM, type: 'UTM Zone 49S', original: clean };
+      }
+    } catch (e) { }
+  }
+
+  return null;
+}
+
+/**
+ * Filter pencarian titik sampel
+ */
+function searchSamplePoints(query) {
+  if (!query || typeof query !== 'string') return [];
+  const q = query.trim().toLowerCase().replace(/^#/, '');
+  if (!q) return [];
+
+  const exact = [];
+  const startsWith = [];
+  const contains = [];
+
+  for (let i = 0; i < allSamplePoints.length; i++) {
+    const pt = allSamplePoints[i];
+    const p = pt.properties || {};
+    const no = `${p.No || ''}`.trim().toLowerCase();
+    const id = `${p.Id || ''}`.trim().toLowerCase();
+    const nozn = `${p.NOZN || ''}`.trim().toLowerCase();
+    const hist = `${p.HISTZONE || ''}`.trim().toLowerCase();
+    const kel = `${p.Kelurahan || ''}`.trim().toLowerCase();
+    const kec = `${p.Kecamatan || ''}`.trim().toLowerCase();
+    const surv = `${p.Surveyor || ''}`.trim().toLowerCase();
+
+    if (no === q || id === q || id.endsWith(q)) {
+      exact.push(pt);
+    } else if (no.startsWith(q) || id.includes(q)) {
+      startsWith.push(pt);
+    } else if (nozn === q || hist === q || kel.includes(q) || kec.includes(q) || surv.includes(q)) {
+      contains.push(pt);
+    }
+  }
+
+  return [...exact, ...startsWith, ...contains].slice(0, 15);
+}
+
+/**
+ * Pin koordinat custom pada peta
+ */
+function plotCoordinateOnMap(lat, lon, parsedInfo) {
+  if (searchCoordMarker) {
+    try { map.removeLayer(searchCoordMarker); } catch(e){}
+    searchCoordMarker = null;
+  }
+
+  const pinIcon = L.divIcon({
+    className: 'znt-coord-pin-container',
+    html: `
+      <div class="znt-coord-pin-pulse"></div>
+      <div class="znt-coord-pin-icon"><i class="fa-solid fa-crosshairs"></i></div>
+    `,
+    iconSize: [36, 36],
+    iconAnchor: [18, 36],
+    popupAnchor: [0, -36]
+  });
+
+  const conversions = convertWgsToTm3AndUtm(lon, lat);
+  const zoneMatch = findZoneContainingPoint(lon, lat);
+  const zoneProps = zoneMatch ? (zoneMatch.properties || zoneMatch.attributes || {}) : null;
+  const nearestPoint = findNearestSamplePoint(lat, lon);
+
+  const tm3Text = conversions.tm3 ? `X: ${conversions.tm3.x.toLocaleString('id-ID')}, Y: ${conversions.tm3.y.toLocaleString('id-ID')}` : '-';
+  const utmText = conversions.utm ? `X: ${conversions.utm.x.toLocaleString('id-ID')}, Y: ${conversions.utm.y.toLocaleString('id-ID')}` : '-';
+  const zoneText = zoneProps ? `Zona ${zoneProps.NOZN || '-'} (${zoneProps.HISTZONE || '-'}) - ${zoneProps.PENGGUNAAN || ''}` : 'Di luar poligon zona ZNT';
+  const survText = zoneProps ? (zoneProps.Surveyor || '-') : '-';
+
+  searchCoordMarker = L.marker([lat, lon], {
+    icon: pinIcon,
+    zIndexOffset: 1100
+  }).addTo(map);
+
+  const popupHtml = `
+    <div class="znt-popup">
+      <div class="znt-popup-header" style="border-left: 4px solid #ef4444;">
+        <span class="znt-popup-title"><i class="fa-solid fa-location-crosshairs"></i> Koordinat Dicari</span>
+        <span class="znt-badge" style="background:#ef444425; color:#f87171; border:1px solid #ef444460;">${parsedInfo.type || 'Koordinat'}</span>
+      </div>
+      <div style="margin-top:6px;">
+        <div class="znt-popup-row"><span>WGS84 Lat, Lon:</span> <strong style="color:#38bdf8;">${lat.toFixed(6)}, ${lon.toFixed(6)}</strong></div>
+        <div class="znt-popup-row"><span>TM-3 BPN:</span> <strong>${tm3Text}</strong></div>
+        <div class="znt-popup-row"><span>UTM 49S:</span> <strong>${utmText}</strong></div>
+        <div class="znt-popup-row"><span>Zona ZNT:</span> <strong style="color:#10b981;">${zoneText}</strong></div>
+        <div class="znt-popup-row"><span>Surveyor Wilayah:</span> <strong>${survText}</strong></div>
+        ${nearestPoint ? `
+          <div class="znt-popup-row" style="margin-top:4px; padding-top:4px; border-top:1px dashed rgba(255,255,255,0.1);">
+            <span>Titik Terdekat:</span>
+            <strong style="color:#fcd34d;">#${nearestPoint.pt.properties.No || ''} (~${Math.round(nearestPoint.dist)} m)</strong>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+
+  searchCoordMarker.bindPopup(popupHtml).openPopup();
+  return { conversions, zoneMatch, zoneProps, nearestPoint };
+}
+
+/**
+ * Fokus peta ke titik sampel tertentu
+ */
+function focusOnSamplePoint(ptFeature) {
+  if (!ptFeature || !ptFeature.geometry || !ptFeature.geometry.coordinates) return false;
+  const coords = ptFeature.geometry.coordinates;
+  const lon = coords[0];
+  const lat = coords[1];
+  const p = ptFeature.properties || {};
+
+  // Pastikan layer titik aktif di peta
+  if (!map.hasLayer(pointsLayerGroup)) {
+    pointsLayerGroup.addTo(map);
+    const togglePointsBtn = document.getElementById('toggle-points');
+    if (togglePointsBtn) togglePointsBtn.classList.add('active');
+  }
+
+  // Terbang ke titik
+  map.flyTo([lat, lon], 18, { animate: true, duration: 1.2 });
+
+  // Berikan efek highlight pulse
+  highlightPointOnMap(lat, lon, `#${p.No || ''}`);
+
+  // Buka popup marker titik
+  const keyNo = `${p.No || ''}`.trim();
+  const keyId = `${p.Id || ''}`.trim().toLowerCase();
+  const marker = sampleMarkersMap[keyNo] || sampleMarkersMap[keyId];
+  if (marker) {
+    setTimeout(() => {
+      try { marker.openPopup(); } catch(e){}
+    }, 700);
+  }
+
+  // Tampilkan kartu hasil di sidebar
+  showPointSearchResult(ptFeature);
+
+  // Jika mobile, otomatis beralih ke peta agar pengguna langsung melihat titiknya
+  if (window.innerWidth <= 768) {
+    const segMap = document.getElementById('seg-btn-map');
+    if (segMap) segMap.click();
+  }
+
+  return true;
+}
+
+/**
+ * Plot dan fokus ke koordinat spasial
+ */
+function focusOnCoordinates(lat, lon, parsedInfo) {
+  map.flyTo([lat, lon], 18, { animate: true, duration: 1.2 });
+  const meta = plotCoordinateOnMap(lat, lon, parsedInfo);
+  showCoordSearchResult(lat, lon, parsedInfo, meta);
+
+  if (window.innerWidth <= 768) {
+    const segMap = document.getElementById('seg-btn-map');
+    if (segMap) segMap.click();
+  }
+}
+
+/**
+ * Tampilkan ringkasan hasil titik sampel di kartu sidebar
+ */
+function showPointSearchResult(ptFeature) {
+  const box = document.getElementById('search-result-box');
+  const title = document.getElementById('result-title');
+  const body = document.getElementById('result-body');
+  const badge = document.getElementById('search-status-badge');
+  if (!box || !body) return;
+
+  const p = ptFeature.properties || {};
+  const coords = ptFeature.geometry.coordinates;
+  const lon = coords[0], lat = coords[1];
+  const conversions = convertWgsToTm3AndUtm(lon, lat);
+  const sCol = getSurveyorColor(p.Surveyor);
+  const nilaiFormatted = p.NilaiPerM2 && !isNaN(p.NilaiPerM2) ? `Rp ${Math.round(p.NilaiPerM2).toLocaleString('id-ID')} / m²` : '-';
+
+  if (badge) {
+    badge.style.display = 'inline-block';
+    badge.textContent = `Titik #${p.No || ''}`;
+    badge.style.background = `${sCol}25`;
+    badge.style.color = sCol;
+  }
+
+  if (title) {
+    title.innerHTML = `<i class="fa-solid fa-location-dot" style="color:${sCol};"></i> Sampel #${p.No || ''} (ID: ${p.Id || '-'})`;
+  }
+
+  body.innerHTML = `
+    <div class="result-row"><span>Zona Terkait:</span> <strong style="color:#38bdf8;">Zona ${p.NOZN || '-'} (${p.HISTZONE || '-'})</strong></div>
+    <div class="result-row"><span>Penggunaan / Zoning:</span> <strong>${p.Zoning || p.GunaObjek || '-'}</strong></div>
+    <div class="result-row"><span>Surveyor:</span> <strong>${getCanonicalSurveyorName(p.Surveyor)}</strong></div>
+    <div class="result-row"><span>Lokasi:</span> <strong>${p.Kelurahan || ''}, ${p.Kecamatan || ''}</strong></div>
+    <div class="result-row"><span>Nilai Tanah:</span> <strong style="color:#fcd34d;">${nilaiFormatted}</strong></div>
+    <div class="result-row"><span>WGS84:</span> <strong style="font-family:'JetBrains Mono',monospace; font-size:0.7rem;">${lat.toFixed(6)}, ${lon.toFixed(6)}</strong></div>
+    ${conversions.tm3 ? `<div class="result-row"><span>TM-3 BPN:</span> <strong style="font-family:'JetBrains Mono',monospace; font-size:0.7rem;">${conversions.tm3.x}, ${conversions.tm3.y}</strong></div>` : ''}
+    <div class="result-actions">
+      <button type="button" class="btn-result-focus" id="btn-refocus-point">
+        <i class="fa-solid fa-crosshairs"></i> Fokus Ulang Titik
+      </button>
+    </div>
+  `;
+
+  const btnRefocus = document.getElementById('btn-refocus-point');
+  if (btnRefocus) {
+    btnRefocus.addEventListener('click', () => {
+      focusOnSamplePoint(ptFeature);
+    });
+  }
+
+  box.style.display = 'flex';
+}
+
+/**
+ * Tampilkan ringkasan hasil plot koordinat di kartu sidebar
+ */
+function showCoordSearchResult(lat, lon, parsedInfo, meta) {
+  const box = document.getElementById('search-result-box');
+  const title = document.getElementById('result-title');
+  const body = document.getElementById('result-body');
+  const badge = document.getElementById('search-status-badge');
+  if (!box || !body) return;
+
+  const conversions = meta.conversions || convertWgsToTm3AndUtm(lon, lat);
+  const zoneProps = meta.zoneProps;
+  const nearest = meta.nearestPoint;
+
+  if (badge) {
+    badge.style.display = 'inline-block';
+    badge.textContent = parsedInfo.type || 'Koordinat';
+    badge.style.background = 'rgba(239, 68, 68, 0.2)';
+    badge.style.color = '#f87171';
+  }
+
+  if (title) {
+    title.innerHTML = `<i class="fa-solid fa-crosshairs" style="color:#ef4444;"></i> Lokasi Koordinat (${parsedInfo.type || 'Spasial'})`;
+  }
+
+  body.innerHTML = `
+    <div class="result-row"><span>WGS84 (Lat, Lon):</span> <strong style="font-family:'JetBrains Mono',monospace; font-size:0.7rem; color:#38bdf8;">${lat.toFixed(6)}, ${lon.toFixed(6)}</strong></div>
+    ${conversions.tm3 ? `<div class="result-row"><span>TM-3 BPN:</span> <strong style="font-family:'JetBrains Mono',monospace; font-size:0.7rem;">X: ${conversions.tm3.x.toLocaleString('id-ID')}, Y: ${conversions.tm3.y.toLocaleString('id-ID')}</strong></div>` : ''}
+    ${conversions.utm ? `<div class="result-row"><span>UTM 49S:</span> <strong style="font-family:'JetBrains Mono',monospace; font-size:0.7rem;">X: ${conversions.utm.x.toLocaleString('id-ID')}, Y: ${conversions.utm.y.toLocaleString('id-ID')}</strong></div>` : ''}
+    <div class="result-row"><span>Zona ZNT Terkait:</span> <strong style="color:#10b981;">${zoneProps ? `Zona ${zoneProps.NOZN || '-'} (${zoneProps.HISTZONE || '-'})` : 'Di luar poligon zona ZNT'}</strong></div>
+    <div class="result-row"><span>Surveyor Wilayah:</span> <strong>${zoneProps ? (zoneProps.Surveyor || '-') : '-'}</strong></div>
+    ${nearest ? `
+      <div class="result-row" style="margin-top:4px; padding-top:4px; border-top:1px dashed rgba(255,255,255,0.08);">
+        <span>Titik Terdekat:</span>
+        <strong style="color:#fcd34d;">#${nearest.pt.properties.No || ''} (~${Math.round(nearest.dist)} m)</strong>
+      </div>
+    ` : ''}
+    <div class="result-actions">
+      <button type="button" class="btn-result-focus" id="btn-refocus-coord">
+        <i class="fa-solid fa-location-crosshairs"></i> Fokus Lokasi
+      </button>
+      ${nearest ? `
+        <button type="button" class="btn-result-focus" id="btn-switch-nearest" style="border-color:#fcd34d; color:#fcd34d; background:rgba(252,211,77,0.1);">
+          <i class="fa-solid fa-location-dot"></i> Buka Titik #${nearest.pt.properties.No || ''}
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  const btnRefocus = document.getElementById('btn-refocus-coord');
+  if (btnRefocus) {
+    btnRefocus.addEventListener('click', () => {
+      map.flyTo([lat, lon], 18, { animate: true, duration: 1.2 });
+      if (searchCoordMarker) searchCoordMarker.openPopup();
+    });
+  }
+
+  const btnSwitch = document.getElementById('btn-switch-nearest');
+  if (btnSwitch && nearest) {
+    btnSwitch.addEventListener('click', () => {
+      focusOnSamplePoint(nearest.pt);
+    });
+  }
+
+  box.style.display = 'flex';
+}
+
+/**
+ * Event listener dan kontrol pencarian
+ */
+function setupSearchControls() {
+  // Tab Switcher di Sidebar
+  const tabPoint = document.getElementById('tab-search-point');
+  const tabCoord = document.getElementById('tab-search-coord');
+  const contentPoint = document.getElementById('search-point-content');
+  const contentCoord = document.getElementById('search-coord-content');
+
+  if (tabPoint && tabCoord) {
+    tabPoint.addEventListener('click', () => {
+      tabPoint.classList.add('active');
+      tabCoord.classList.remove('active');
+      if (contentPoint) contentPoint.style.display = 'flex';
+      if (contentCoord) contentCoord.style.display = 'none';
+      const inputP = document.getElementById('input-search-point');
+      if (inputP) inputP.focus();
+    });
+
+    tabCoord.addEventListener('click', () => {
+      tabCoord.classList.add('active');
+      tabPoint.classList.remove('active');
+      if (contentPoint) contentPoint.style.display = 'none';
+      if (contentCoord) contentCoord.style.display = 'flex';
+      const inputC = document.getElementById('input-search-coord');
+      if (inputC) inputC.focus();
+    });
+  }
+
+  // Tombol Tutup Hasil
+  const btnCloseResult = document.getElementById('btn-close-result');
+  const resultBox = document.getElementById('search-result-box');
+  const badge = document.getElementById('search-status-badge');
+  if (btnCloseResult && resultBox) {
+    btnCloseResult.addEventListener('click', () => {
+      resultBox.style.display = 'none';
+      if (badge) badge.style.display = 'none';
+    });
+  }
+
+  // 1. Sidebar Pencarian Titik Sampel
+  const inputPoint = document.getElementById('input-search-point');
+  const btnClearPoint = document.getElementById('btn-clear-point');
+  const btnDoSearchPoint = document.getElementById('btn-do-search-point');
+  const acListPoint = document.getElementById('point-autocomplete-list');
+
+  function renderPointAutocomplete(query) {
+    if (!acListPoint) return;
+    const results = searchSamplePoints(query);
+    acListPoint.innerHTML = '';
+
+    if (results.length === 0) {
+      acListPoint.innerHTML = '<div style="padding:10px 12px; font-size:0.75rem; color:var(--text-dim);">Titik sampel tidak ditemukan.</div>';
+      acListPoint.style.display = 'block';
+      return;
+    }
+
+    results.forEach(pt => {
+      const p = pt.properties || {};
+      const sCol = getSurveyorColor(p.Surveyor);
+      const nilaiFormatted = p.NilaiPerM2 && !isNaN(p.NilaiPerM2) ? `Rp ${Math.round(p.NilaiPerM2).toLocaleString('id-ID')}/m²` : '';
+
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.innerHTML = `
+        <div class="ac-left">
+          <div class="ac-title">
+            <span style="color:${sCol};">#${p.No || ''}</span>
+            <span style="color:#38bdf8;">Zona ${p.NOZN || '-'}</span>
+            <span style="font-weight:normal; font-size:0.7rem; color:var(--text-muted);">&bull; ${p.GunaObjek || 'Tanah'}</span>
+          </div>
+          <div class="ac-sub">${p.Kelurahan || ''}, ${p.Kecamatan || ''} &bull; ${getCanonicalSurveyorName(p.Surveyor)}</div>
+        </div>
+        ${nilaiFormatted ? `<div class="ac-badge" style="background:${sCol}20; color:${sCol};">${nilaiFormatted}</div>` : ''}
+      `;
+
+      item.addEventListener('click', () => {
+        if (inputPoint) inputPoint.value = `#${p.No || ''}`;
+        acListPoint.style.display = 'none';
+        focusOnSamplePoint(pt);
+      });
+
+      acListPoint.appendChild(item);
+    });
+
+    acListPoint.style.display = 'block';
+  }
+
+  if (inputPoint) {
+    inputPoint.addEventListener('input', () => {
+      const val = inputPoint.value.trim();
+      if (btnClearPoint) btnClearPoint.style.display = val ? 'flex' : 'none';
+      if (val.length >= 1) {
+        renderPointAutocomplete(val);
+      } else {
+        if (acListPoint) acListPoint.style.display = 'none';
+      }
+    });
+
+    inputPoint.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = inputPoint.value.trim();
+        const results = searchSamplePoints(val);
+        if (results.length > 0) {
+          if (acListPoint) acListPoint.style.display = 'none';
+          focusOnSamplePoint(results[0]);
+        }
+      } else if (e.key === 'Escape') {
+        if (acListPoint) acListPoint.style.display = 'none';
+      }
+    });
+  }
+
+  if (btnClearPoint && inputPoint) {
+    btnClearPoint.addEventListener('click', () => {
+      inputPoint.value = '';
+      btnClearPoint.style.display = 'none';
+      if (acListPoint) acListPoint.style.display = 'none';
+      inputPoint.focus();
+    });
+  }
+
+  if (btnDoSearchPoint && inputPoint) {
+    btnDoSearchPoint.addEventListener('click', () => {
+      const val = inputPoint.value.trim();
+      if (!val) return;
+      const results = searchSamplePoints(val);
+      if (results.length > 0) {
+        if (acListPoint) acListPoint.style.display = 'none';
+        focusOnSamplePoint(results[0]);
+      } else {
+        alert(`Titik sampel "${val}" tidak ditemukan.`);
+      }
+    });
+  }
+
+  // 2. Sidebar Pencarian Koordinat Spasial
+  const inputCoord = document.getElementById('input-search-coord');
+  const btnClearCoord = document.getElementById('btn-clear-coord');
+  const btnDoSearchCoord = document.getElementById('btn-do-search-coord');
+
+  function executeCoordSearch(coordText) {
+    if (!coordText) return;
+    const parsed = parseCoordinateInput(coordText);
+    if (!parsed) {
+      alert("Format koordinat tidak dikenali!\n\nContoh yang didukung:\n- WGS84: -7.6780, 109.0183\n- TM-3 BPN: 122705, 662213\n- UTM 49S: 281600, 9151200");
+      return;
+    }
+
+    focusOnCoordinates(parsed.lat, parsed.lon, parsed);
+  }
+
+  if (inputCoord) {
+    inputCoord.addEventListener('input', () => {
+      const val = inputCoord.value.trim();
+      if (btnClearCoord) btnClearCoord.style.display = val ? 'flex' : 'none';
+    });
+
+    inputCoord.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        executeCoordSearch(inputCoord.value.trim());
+      }
+    });
+  }
+
+  if (btnClearCoord && inputCoord) {
+    btnClearCoord.addEventListener('click', () => {
+      inputCoord.value = '';
+      btnClearCoord.style.display = 'none';
+      inputCoord.focus();
+    });
+  }
+
+  if (btnDoSearchCoord && inputCoord) {
+    btnDoSearchCoord.addEventListener('click', () => {
+      executeCoordSearch(inputCoord.value.trim());
+    });
+  }
+
+  // 3. Quick Search Toolbar pada Peta
+  const mapSearchInput = document.getElementById('map-quick-search-input');
+  const mapSearchClear = document.getElementById('btn-map-search-clear');
+  const mapSearchDropdown = document.getElementById('map-search-dropdown');
+
+  function renderMapSearchDropdown(query) {
+    if (!mapSearchDropdown) return;
+    mapSearchDropdown.innerHTML = '';
+
+    const clean = query.trim();
+    if (!clean) {
+      mapSearchDropdown.style.display = 'none';
+      return;
+    }
+
+    // Cek apakah input berupa koordinat
+    const coordParse = parseCoordinateInput(clean);
+    if (coordParse) {
+      const coordItem = document.createElement('div');
+      coordItem.className = 'autocomplete-item';
+      coordItem.style.background = 'rgba(239, 68, 68, 0.15)';
+      coordItem.innerHTML = `
+        <div class="ac-left">
+          <div class="ac-title" style="color:#f87171;">
+            <i class="fa-solid fa-crosshairs"></i> Plot Koordinat (${coordParse.type})
+          </div>
+          <div class="ac-sub">Lat: ${coordParse.lat.toFixed(6)}, Lon: ${coordParse.lon.toFixed(6)}</div>
+        </div>
+        <div class="ac-badge" style="background:#ef4444; color:#fff;">Klik untuk Plot</div>
+      `;
+      coordItem.addEventListener('click', () => {
+        mapSearchDropdown.style.display = 'none';
+        focusOnCoordinates(coordParse.lat, coordParse.lon, coordParse);
+      });
+      mapSearchDropdown.appendChild(coordItem);
+    }
+
+    // Cek pencarian titik sampel
+    const pointResults = searchSamplePoints(clean);
+    pointResults.forEach(pt => {
+      const p = pt.properties || {};
+      const sCol = getSurveyorColor(p.Surveyor);
+      const nilaiFormatted = p.NilaiPerM2 && !isNaN(p.NilaiPerM2) ? `Rp ${Math.round(p.NilaiPerM2).toLocaleString('id-ID')}/m²` : '';
+
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.innerHTML = `
+        <div class="ac-left">
+          <div class="ac-title">
+            <span style="color:${sCol};">#${p.No || ''}</span>
+            <span style="color:#38bdf8;">Zona ${p.NOZN || '-'}</span>
+            <span style="font-weight:normal; font-size:0.7rem; color:var(--text-muted);">&bull; ${p.GunaObjek || 'Tanah'}</span>
+          </div>
+          <div class="ac-sub">${p.Kelurahan || ''}, ${p.Kecamatan || ''} &bull; ${getCanonicalSurveyorName(p.Surveyor)}</div>
+        </div>
+        ${nilaiFormatted ? `<div class="ac-badge" style="background:${sCol}20; color:${sCol};">${nilaiFormatted}</div>` : ''}
+      `;
+
+      item.addEventListener('click', () => {
+        mapSearchInput.value = `#${p.No || ''}`;
+        mapSearchDropdown.style.display = 'none';
+        focusOnSamplePoint(pt);
+      });
+
+      mapSearchDropdown.appendChild(item);
+    });
+
+    if (!coordParse && pointResults.length === 0) {
+      mapSearchDropdown.innerHTML = '<div style="padding:10px 12px; font-size:0.75rem; color:var(--text-dim);">Tidak ditemukan titik atau koordinat cocok.</div>';
+    }
+
+    mapSearchDropdown.style.display = 'block';
+  }
+
+  if (mapSearchInput) {
+    mapSearchInput.addEventListener('input', () => {
+      const val = mapSearchInput.value.trim();
+      if (mapSearchClear) mapSearchClear.style.display = val ? 'flex' : 'none';
+      if (val.length >= 1) {
+        renderMapSearchDropdown(val);
+      } else {
+        if (mapSearchDropdown) mapSearchDropdown.style.display = 'none';
+      }
+    });
+
+    mapSearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = mapSearchInput.value.trim();
+        const coordParse = parseCoordinateInput(val);
+        if (coordParse) {
+          if (mapSearchDropdown) mapSearchDropdown.style.display = 'none';
+          focusOnCoordinates(coordParse.lat, coordParse.lon, coordParse);
+          return;
+        }
+        const results = searchSamplePoints(val);
+        if (results.length > 0) {
+          if (mapSearchDropdown) mapSearchDropdown.style.display = 'none';
+          focusOnSamplePoint(results[0]);
+        }
+      } else if (e.key === 'Escape') {
+        if (mapSearchDropdown) mapSearchDropdown.style.display = 'none';
+      }
+    });
+  }
+
+  if (mapSearchClear && mapSearchInput) {
+    mapSearchClear.addEventListener('click', () => {
+      mapSearchInput.value = '';
+      mapSearchClear.style.display = 'none';
+      if (mapSearchDropdown) mapSearchDropdown.style.display = 'none';
+      mapSearchInput.focus();
+    });
+  }
+
+  // Klik di luar dropdown untuk menutup dropdown
+  document.addEventListener('click', (e) => {
+    if (acListPoint && !acListPoint.contains(e.target) && e.target !== inputPoint) {
+      acListPoint.style.display = 'none';
+    }
+    if (mapSearchDropdown && !mapSearchDropdown.contains(e.target) && e.target !== mapSearchInput) {
+      mapSearchDropdown.style.display = 'none';
+    }
   });
 }
 
@@ -1235,6 +2100,9 @@ function setupEventListeners() {
       setTimeout(() => map.invalidateSize(), 200);
     });
   });
+
+  // Kontrol Pencarian Titik Sampel & Koordinat
+  setupSearchControls();
 }
 
 // =============================================================================
