@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =============================================================================
  * KONFIGURASI DASHBOARD ZNT KABUPATEN CILACAP 2026
  * =============================================================================
@@ -74,7 +74,7 @@ const CONFIG = {
   ],
 
   // 6. Metadata Pembaruan Data Dashboard
-  lastUpdateDate: "2026-11-16",
-  lastUpdateTime: "09:43 WIB",
+  lastUpdateDate: "2026-11-18",
+  lastUpdateTime: "09:17 WIB",
   lastUpdateNote: "Pembaruan fitur pencarian titik & koordinat spasial"
 };

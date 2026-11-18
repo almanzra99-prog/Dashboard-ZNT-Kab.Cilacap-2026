@@ -93,6 +93,7 @@ let aplLayerGroup = null;
 let sampleMarkersMap = {};        // { "1245": marker, "01/2026/0075/1/1245": marker }
 let searchPulseMarker = null;     // Marker efek pulsing titik sampel
 let searchCoordMarker = null;     // Marker pin lokasi koordinat dicari
+let detectedDataDate = null;      // Waktu Last-Modified dari server GeoJSON
 let activeFilterSurveyor = 'default';
 let colorMode = 'surveyor';       // 'surveyor' (Pewarnaan per Surveyor) atau 'status' (Hijau/Kuning/Merah)
 
@@ -311,6 +312,14 @@ async function loadSamplePoints() {
     try {
       const resp = await fetch(pointsPath, { cache: "no-cache" });
       if (resp.ok) {
+        // Deteksi waktu Last-Modified dari server
+        const lastMod = resp.headers.get("Last-Modified");
+        if (lastMod) {
+          const d = new Date(lastMod);
+          if (!isNaN(d.getTime())) {
+            if (!detectedDataDate || d > detectedDataDate) detectedDataDate = d;
+          }
+        }
         const geojson = await resp.json();
         allSamplePoints = geojson.features || [];
         console.log(`✅ Berhasil memuat ${allSamplePoints.length} titik sampel dari: ${pointsPath}`);
@@ -355,6 +364,13 @@ async function loadZonesGeoJson() {
     try {
       const resp = await fetch(path, { cache: "no-cache" });
       if (resp.ok) {
+        const lastMod = resp.headers.get("Last-Modified");
+        if (lastMod) {
+          const d = new Date(lastMod);
+          if (!isNaN(d.getTime())) {
+            if (!detectedDataDate || d > detectedDataDate) detectedDataDate = d;
+          }
+        }
         let rawData = await resp.json();
         let geojson = normalizeToGeoJson(rawData);
         if (geojson && geojson.features && geojson.features.length > 0) {
@@ -912,10 +928,67 @@ function formatIndonesianDateShort(dateStr) {
 }
 
 function updateDashboardDateBadge() {
-  const rawDate = (CONFIG && CONFIG.lastUpdateDate) ? CONFIG.lastUpdateDate : new Date().toISOString().slice(0, 10);
-  const rawTime = (CONFIG && CONFIG.lastUpdateTime) ? CONFIG.lastUpdateTime : "09:43 WIB";
-  const formattedDate = formatIndonesianDateShort(rawDate);
-  const displayText = `${formattedDate}, ${rawTime}`;
+  let displayDateStr = null;
+  let displayTimeStr = null;
+
+  // 1. Cek tanggal survei lapangan terbaru dari data titik sampel
+  let maxSurveyDate = null;
+  if (allSamplePoints && allSamplePoints.length > 0) {
+    allSamplePoints.forEach(pt => {
+      const p = pt.properties || pt.attributes || {};
+      const tgl = p.Tgl;
+      if (tgl && typeof tgl === 'string' && tgl.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        if (!maxSurveyDate || tgl > maxSurveyDate) {
+          maxSurveyDate = tgl;
+        }
+      }
+    });
+  }
+
+  // 2. Cek apakah ada HTTP Last-Modified dari file GeoJSON yang di-fetch dari server (GitHub Pages / Localhost)
+  if (detectedDataDate) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    const d = detectedDataDate;
+    const day = d.getDate();
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+
+    displayDateStr = `${day} ${month} ${year}`;
+    displayTimeStr = `${hours}:${mins} WIB`;
+  }
+
+  // 3. Bandingkan dengan CONFIG.lastUpdateDate jika ada
+  if (CONFIG && CONFIG.lastUpdateDate) {
+    const cfgFormatted = formatIndonesianDateShort(CONFIG.lastUpdateDate);
+    const cfgTime = (CONFIG && CONFIG.lastUpdateTime) ? CONFIG.lastUpdateTime : "09:00 WIB";
+
+    const cfgIso = CONFIG.lastUpdateDate;
+    const detIso = detectedDataDate ? detectedDataDate.toISOString().slice(0, 10) : '';
+
+    if (!displayDateStr || cfgIso >= detIso) {
+      displayDateStr = cfgFormatted;
+      displayTimeStr = cfgTime;
+    }
+  }
+
+  // 4. Jika tanggal survei fisik lebih baru dari yang terdeteksi
+  if (maxSurveyDate) {
+    const surveyFormatted = formatIndonesianDateShort(maxSurveyDate);
+    if (!displayDateStr) {
+      displayDateStr = surveyFormatted;
+      displayTimeStr = "09:00 WIB";
+    }
+  }
+
+  // Fallback terakhir: Hari ini
+  if (!displayDateStr) {
+    displayDateStr = formatIndonesianDateShort(new Date().toISOString().slice(0, 10));
+    displayTimeStr = "09:00 WIB";
+  }
+
+  const displayText = `${displayDateStr}, ${displayTimeStr}`;
 
   // 1. Header Desktop
   const headerVal = document.getElementById('header-last-update-val');
