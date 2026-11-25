@@ -74,7 +74,7 @@ const CONFIG = {
   ],
 
   // 6. Metadata Pembaruan Data Dashboard
-  lastUpdateDate: "2026-11-18",
-  lastUpdateTime: "09:17 WIB",
+  lastUpdateDate: "2026-11-25",
+  lastUpdateTime: "23:59 WIB",
   lastUpdateNote: "Pembaruan fitur pencarian titik & koordinat spasial"
 };
